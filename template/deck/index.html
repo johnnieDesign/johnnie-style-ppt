@@ -1,0 +1,1197 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>발표</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* johnnie-style-ppt 엔진. 대본(data.js)이 원본이고, 장면(scenes/NN.js)은 대본 구절에 매달려 넘어간다.
+   레이아웃: 1920×1080 무대 하나를 화면 크기에 맞춰 줄인다(남는 곳은 바탕색).
+   기본 모양(johnnie 스타일): 어두운 바탕 · 강조색 하나 · 강조 상자는 빨강 3px · 모서리 10.
+   위 = 파트별 진행 바(대본 길이 비례), 아래 왼쪽 = 챕터, 아래 오른쪽 = 발표 제목(고정).
+   강조 장면은 가운데 정렬, 자료 · 설명 장면은 왼쪽 정렬. 실제 서비스(지라 · 시트 · 슬랙 · 컨플루언스 · 피그마)는 밝은 창으로 다시 그린다.
+   디자인 단계에서 바꾸는 곳은 아래 '서체'와 ':root' 두 곳이다. 장면 마크업과 그 파트 CSS 는 scenes/NN.js. */
+
+/* ── 서체: 두 자리(Ed = 주 서체, Pre = 보조 서체). local() 에 PostScript 이름과 전체 이름을 둘 다 적는다.
+      같은 서체도 기기마다 설치 이름이 다를 수 있다. tools/build_single.py 가 이 local() 이름으로 서체 파일을 찾아 넣는다 ── */
+@font-face{font-family:"Ed";font-weight:300;src:local("Pretendard-Light"),local("Pretendard Light")}
+@font-face{font-family:"Ed";font-weight:400;src:local("Pretendard-Regular"),local("Pretendard Regular")}
+@font-face{font-family:"Ed";font-weight:500;src:local("Pretendard-Medium"),local("Pretendard Medium")}
+@font-face{font-family:"Ed";font-weight:600;src:local("Pretendard-SemiBold"),local("Pretendard SemiBold")}
+@font-face{font-family:"Ed";font-weight:700;src:local("Pretendard-Bold"),local("Pretendard Bold")}
+@font-face{font-family:"Ed";font-weight:800;src:local("Pretendard-ExtraBold"),local("Pretendard ExtraBold")}
+@font-face{font-family:"Pre";font-weight:400;src:local("Pretendard-Regular"),local("Pretendard Regular")}
+@font-face{font-family:"Pre";font-weight:500;src:local("Pretendard-Medium"),local("Pretendard Medium")}
+@font-face{font-family:"Pre";font-weight:600;src:local("Pretendard-SemiBold"),local("Pretendard SemiBold")}
+@font-face{font-family:"Pre";font-weight:700;src:local("Pretendard-Bold"),local("Pretendard Bold")}
+@font-face{font-family:"Pre";font-weight:800;src:local("Pretendard-ExtraBold"),local("Pretendard ExtraBold")}
+
+:root{
+  /* ── 테마: 디자인 단계에서 바꾸는 곳. 강조색은 data.js meta.accent 로도 덮어쓴다 ── */
+  --paper:#000000; --sheet:rgba(255,255,255,.08); --ink:#FFFFFF; --ink-1:rgba(255,255,255,.89); --ink-2:rgba(255,255,255,.68);
+  --ink-3:rgba(255,255,255,.45); --rule:rgba(255,255,255,.25); --rule-2:rgba(255,255,255,.14);
+  --accent:#FF4800; --box:#FF0000;
+  --mark:var(--accent); --agent:var(--accent); --accent-soft:color-mix(in srgb,var(--accent) 12%,transparent);
+  /* 실제 서비스 화면(밝은 창) 안쪽 */
+  --ui-bg:#FFFFFF; --ui-bg-2:#F4F5F7; --ui-ink:#172B4D; --ui-ink-2:#5E6C84; --ui-line:#DFE1E6; --ui-link:#0C66E4;
+  --f-ed:"Ed",Pretendard,-apple-system,"Apple SD Gothic Neo",sans-serif;
+  --f-pre:"Pre",Pretendard,-apple-system,"Apple SD Gothic Neo",sans-serif;
+  --f-ui:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pre",sans-serif;   /* 서비스 창: 맥은 시스템 서체, 그 밖의 기기는 공유본에 넣은 보조 서체 */
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+[hidden]{display:none!important}  /* 파일을 직접 열 때도 시작 화면 · 도움말이 숨게 */
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);overflow:hidden;box-sizing:border-box;
+  padding-block:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  font-family:var(--f-ed);-webkit-font-smoothing:antialiased}
+#viewport{position:relative;width:100%;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(.5);
+  transform-origin:center;background:var(--paper);color:var(--ink);overflow:hidden;font-family:var(--f-ed);font-variant-numeric:tabular-nums;
+  word-break:keep-all;overflow-wrap:break-word}
+#stage *{box-sizing:border-box}
+
+/* ── 무대 장치 ─────────────────────────────── */
+.part{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .5s ease,visibility 0s linear .5s}
+.part.active{opacity:1;visibility:visible;transition:opacity .5s ease}
+.abs{position:absolute}
+[data-at],[data-until]{opacity:0;transform:translateY(14px);transition:opacity .45s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
+[data-at].on,[data-until].on{opacity:1;transform:none;transition-delay:var(--d,0s)}
+[data-at].off,[data-until].off{opacity:0;transform:translateY(-8px);transition-delay:0s}
+.fx-fade[data-at]{transform:none}
+.fx-pop[data-at]{transform:scale(.9)}
+.fx-pop[data-at].on{transform:none}
+.fx-wipe[data-at]{opacity:1;transform:none;clip-path:inset(0 100% 0 0);transition:clip-path .9s cubic-bezier(.5,0,.2,1)}
+.fx-wipe[data-at].on{clip-path:inset(0 0 0 0)}
+.fx-wipe[data-at].off{opacity:0;clip-path:inset(0 0 0 0)}
+path.fx-draw[data-at]{transform:none;stroke-dasharray:1 1;stroke-dashoffset:1;transition:opacity .3s,stroke-dashoffset .9s ease}
+path.fx-draw[data-at].on{stroke-dashoffset:0}
+@media (prefers-reduced-motion:reduce){
+  [data-at],[data-until],.fx-pop[data-at]{transform:none!important;transition:opacity .2s!important}
+  .fx-wipe[data-at]{clip-path:none}
+}
+
+/* ── 글자 (제목 600 40px · 카드 본문 400 50px · 라벨 800 30px · 진행 바 · 푸터 500 20px). 화면 글자는 22px 이상 ── */
+.title{position:absolute;left:100px;top:190px;margin:0;font:600 40px/1.3 var(--f-ed);color:var(--ink);letter-spacing:-.01em;white-space:nowrap}
+.title.c{left:0;right:0;top:257px;text-align:center}
+.disp{margin:0;font:800 120px/1.06 var(--f-ed);letter-spacing:-.03em;color:var(--ink);text-wrap:balance}
+.disp-xl{margin:0;font:800 400px/.9 var(--f-ed);letter-spacing:-.05em;color:var(--ink)}
+.lead{margin:0;font:600 64px/1.25 var(--f-ed);letter-spacing:-.02em;color:var(--ink);text-wrap:balance}
+.body-l{margin:0;font:400 50px/1.4 var(--f-ed);color:var(--ink)}
+.body{margin:0;font:400 36px/1.45 var(--f-ed);color:var(--ink-1)}
+.label{margin:0;font:800 30px/1.2 var(--f-ed);color:var(--ink)}
+.cap{margin:0;font:500 24px/1.4 var(--f-ed);color:var(--ink-2)}
+.num{font-family:var(--f-ed);font-weight:800;letter-spacing:-.04em;line-height:.9}
+.mono{font-family:var(--f-mono);font-weight:500}
+.acc{color:var(--accent)} .dim{color:var(--ink-2)} .faint{color:var(--ink-3)}
+.strike{text-decoration:line-through;text-decoration-color:var(--accent);text-decoration-thickness:5px}
+.center{text-align:center}
+
+/* ── 물건 ─────────────────────────────── */
+/* 카드: 규칙 · 원칙 한 덩어리 */
+.card{background:var(--sheet);border:1px solid var(--rule);border-radius:4px;padding:40px 50px;display:flex;flex-direction:column;gap:20px}
+/* 강조 상자: 빨강 3px · 모서리 10. .hl 은 요소 바깥에, .hlbox 는 자리를 직접 잡을 때 */
+.hl{outline:3px solid var(--box);outline-offset:6px;border-radius:10px}
+.hlbox{position:absolute;border:3px solid var(--box);border-radius:10px;pointer-events:none}
+.chip{display:inline-flex;align-items:center;gap:10px;padding:10px 20px;border-radius:999px;font:500 24px/1.15 var(--f-ed);
+  background:var(--sheet);border:1px solid var(--rule);color:var(--ink-1);white-space:nowrap}
+.chip.acc{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.logo{display:inline-block;object-fit:contain;vertical-align:middle;flex:none}
+.logo.s{width:32px;height:32px} .logo.m{width:56px;height:56px} .logo.l{width:112px;height:112px} .logo.xl{width:180px;height:180px}
+.bubble{position:relative;padding:26px 32px;border-radius:20px;background:#FFFFFF;color:#111111;font:600 36px/1.4 var(--f-ed)}
+.bubble::after{content:"";position:absolute;left:44px;bottom:-12px;width:26px;height:26px;background:#FFFFFF;transform:rotate(45deg)}
+.who{font:500 22px/1 var(--f-ed);color:var(--ink-2);margin-bottom:14px}
+.wires{position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none;overflow:visible}
+.wires path{fill:none;stroke-width:3;stroke-linecap:round}
+.w-ink,.w-ag{stroke:var(--ink-2)} .w-acc,.w-mk{stroke:var(--accent)} .w-dash{stroke-dasharray:10 10}
+.ah-ink,.ah-ag{fill:var(--ink-2)} .ah-acc,.ah-mk{fill:var(--accent)}
+
+/* 셀 격자: 많은 수를 한눈에(data-cells="99" data-hl-first="28" 또는 data-hl-spread="30") */
+.cells{display:grid;grid-template-columns:repeat(var(--cols),var(--cs));gap:var(--cg)}
+.cells i{display:block;width:var(--cs);height:var(--cs);border-radius:3px;background:var(--rule-2);opacity:0;transform:scale(.4);
+  transition:opacity .3s ease,transform .4s ease,background-color .5s ease;transition-delay:calc(var(--k)*var(--step,3ms))}
+.on>.cells i,.cells.on i{opacity:1;transform:none}
+.cells i.h{background:var(--ink-2)}
+[data-s="hl"] .cells i.h,.cells[data-s="hl"] i.h,[data-s="pulse"] .cells i.h{background:var(--accent)}
+
+/* ── 실제 서비스 화면: 밝은 창으로 다시 그린다(진짜 서비스일 필요는 없다) ── */
+.app{background:var(--ui-bg);color:var(--ui-ink);border-radius:12px;overflow:hidden;font-family:var(--f-ui)}
+.app>.bar{display:flex;align-items:center;gap:14px;height:56px;padding:0 20px;background:var(--ui-bg-2);border-bottom:1px solid var(--ui-line);
+  font:600 20px/1 var(--f-ui);color:var(--ui-ink-2);white-space:nowrap}
+.app>.bar .dots{display:flex;gap:8px;margin-right:4px} .app>.bar .dots i{width:12px;height:12px;border-radius:50%;background:#D0D3D9}
+.app>.bar .url{flex:1;height:34px;border-radius:8px;background:#FFFFFF;border:1px solid var(--ui-line);display:flex;align-items:center;padding:0 14px;
+  font:400 17px/1 var(--f-ui);color:var(--ui-ink-2);overflow:hidden}
+.app>.body{padding:28px 32px;color:var(--ui-ink)}   /* 글자 클래스 .body(흰 글자)와 이름이 같아 창 안 글자색을 여기서 되돌린다 */
+.app.fg>.body{color:#FFFFFF} .app.term>.body{color:#E6E6E6}
+.app img.shot{display:block;width:100%;height:auto}
+/* 지라 */
+.jira .key{display:flex;align-items:center;gap:10px;font:600 20px/1 var(--f-ui);color:var(--ui-link)}
+.jira h4{margin:12px 0 20px;font:600 34px/1.3 var(--f-ui);color:var(--ui-ink)}
+.jira dl{display:grid;grid-template-columns:150px 1fr;gap:14px 20px;margin:0;font:400 20px/1.4 var(--f-ui)}
+.jira dt{color:var(--ui-ink-2)} .jira dd{margin:0;color:var(--ui-ink)}
+.lz{display:inline-block;padding:4px 10px;border-radius:4px;font:700 18px/1.25 var(--f-ui);white-space:nowrap}
+.lz.todo{background:#DFE1E6;color:#44546F} .lz.doing{background:#CCE0FF;color:#0055CC} .lz.done{background:#BAF3DB;color:#216E4E} .lz.bug{background:#FFD5D2;color:#AE2E24}
+/* 구글 시트 */
+.gs table{border-collapse:collapse;font:400 18px/1.3 var(--f-ui);color:#202124}
+.gs th{background:#F8F9FA;color:#5F6368;font-weight:400;border:1px solid #E2E3E3;height:30px;padding:0 8px}
+.gs td{border:1px solid #E2E3E3;padding:8px 12px;height:42px;white-space:nowrap}
+.gs tr.hd td{font-weight:700;background:#F1F3F4}
+.st{display:inline-block;padding:3px 12px;border-radius:12px;font:500 18px/1.3 var(--f-ui);white-space:nowrap}
+.st.y{background:#FFE5A0;color:#473821} .st.r{background:#FFCFC9;color:#B10202} .st.g{background:#D4EDBC;color:#11734B} .st.b{background:#C6DBE1;color:#0A53A8} .st.n{background:#E6E6E6;color:#3D3D3D}
+/* 컨플루언스 */
+.cf .crumb{font:400 17px/1 var(--f-ui);color:var(--ui-ink-2)}
+.cf h3{margin:12px 0 22px;font:600 40px/1.25 var(--f-ui);color:var(--ui-ink)}
+.cf table{border-collapse:collapse;width:100%;font:400 19px/1.4 var(--f-ui);color:var(--ui-ink)}  /* 표는 글자색을 직접 준다(doctype 없이 열면 호환 모드라 물려받지 않는다) */
+.cf th{background:#F4F5F7;text-align:left;font-weight:600} .cf td,.cf th{border:1px solid #DFE1E6;padding:10px 14px}
+/* 슬랙 */
+.sl .chn{font:900 22px/1 var(--f-ui);color:#1D1C1D;padding-bottom:16px;border-bottom:1px solid #DDDDDD;margin-bottom:8px}
+.sl .msg{display:grid;grid-template-columns:52px 1fr;gap:14px;padding:12px 0}
+.sl .av{width:52px;height:52px;border-radius:10px;background:#4A154B;display:grid;place-items:center;font:700 22px/1 var(--f-ui);color:#FFFFFF;overflow:hidden}
+.sl .nm{font:900 21px/1.3 var(--f-ui);color:#1D1C1D} .sl .tm{font:400 16px/1 var(--f-ui);color:#616061;margin-left:8px}
+.sl .tag{font:600 13px/1 var(--f-ui);background:#E8E8E8;color:#616061;padding:2px 5px;border-radius:3px;margin-left:6px;vertical-align:2px}
+.sl .tx{font:400 21px/1.5 var(--f-ui);color:#1D1C1D}
+/* 피그마 캔버스 */
+.app.fg{background:#1E1E1E;color:#FFFFFF} .app.fg>.bar{background:#2C2C2C;border-color:#383838;color:#B3B3B3}
+.fg .flbl{font:500 15px/1 var(--f-ui);color:#B3B3B3;margin-bottom:8px}
+/* 터미널 · Claude Code */
+.app.term{background:#0D0D0D;color:#E6E6E6;border:1px solid #2A2A2A} .app.term>.bar{background:#1A1A1A;border-color:#2A2A2A;color:#9A9A9A}
+.term .body{font:400 20px/1.6 var(--f-mono)} .term .p{color:#D97757} .term .ok{color:#7CC88A} .term .dim{color:#8A8A8A}
+/* 깃허브 */
+.gh .row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #D1D9E0;font:400 19px/1.3 var(--f-ui);color:#1F2328}
+.gh .row .when{margin-left:auto;color:#59636E;font-size:16px}
+/* 휴대폰 */
+.phone{position:relative;width:300px;height:620px;border-radius:44px;border:10px solid #1C1C1E;background:#FFFFFF;overflow:hidden;box-shadow:0 0 0 2px #3A3A3C}
+.phone img{display:block;width:100%;height:auto}
+
+/* ── 진행 바 · 아래 표시 · 자막(번호 500 20px · 선 3px · 위 50/87 · 아래 1005 · 좌우 100) ── */
+#progress{position:absolute;left:100px;right:100px;top:50px;display:flex;gap:10px;z-index:5}
+#progress .seg{position:relative;height:40px;flex:var(--g,1) 1 0;min-width:0;cursor:pointer;background:none;border:0;padding:0}
+#progress .seg span{position:absolute;left:0;top:0;font:500 20px/1.25 var(--f-ed);color:var(--ink-1);transition:color .3s}
+#progress .seg i{position:absolute;left:0;right:0;top:37px;height:3px;border-radius:999px;background:var(--rule);overflow:hidden}
+#progress .seg i b{position:absolute;left:0;top:0;bottom:0;width:calc(var(--f,0)*100%);background:var(--ink-1);border-radius:999px}
+#progress .seg:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+#foot{position:absolute;left:100px;right:100px;top:1005px;height:25px;display:flex;justify-content:space-between;align-items:center;
+  font:500 20px/1.25 var(--f-ed);color:var(--ink-2);z-index:6}
+#foot .where{display:flex;gap:14px;align-items:center}
+#foot .where b{font:500 20px/1.25 var(--f-ed);color:var(--ink-2)}
+#foot .pid{font:500 18px/1 var(--f-mono);color:var(--accent);opacity:0;transition:opacity .3s}
+#stage.ui #foot .pid,#stage.subs #foot .pid{opacity:1}
+#foot .deck-title{white-space:nowrap}
+#foot .ctl{position:absolute;right:0;bottom:44px;display:flex;gap:8px;opacity:0;pointer-events:none;transition:opacity .3s}
+#stage.ui #foot .ctl{opacity:1;pointer-events:auto}
+#foot button,#start button,#help button{font:500 22px/1 var(--f-ed);color:var(--ink);background:#141414;border:1px solid var(--rule);
+  border-radius:999px;padding:12px 20px;cursor:pointer}
+#foot button[aria-pressed="true"]{background:#FFFFFF;color:#000000;border-color:#FFFFFF}
+#foot button:focus-visible,#start button:focus-visible,#help button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+#sub{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);width:1560px;padding:18px 30px;border-radius:12px;
+  background:rgba(20,20,20,.94);border:1px solid var(--rule);font:500 28px/1.5 var(--f-ed);color:var(--ink);z-index:6;text-wrap:pretty}
+#sub b{font:600 20px/1 var(--f-mono);color:var(--accent);margin-right:14px;vertical-align:2px}
+#sub .ck{font-style:normal;font-weight:700;color:var(--accent);margin:0 6px 0 2px}
+#sub .ck.done{color:var(--ink-3)}
+/* 리허설 모드: 음성이 클릭 지점을 지날 때 잠깐 뜬다 */
+#cue{position:absolute;right:100px;top:950px;height:36px;display:flex;align-items:center;padding:0 18px;border-radius:999px;z-index:7;
+  background:var(--accent);color:#000000;font:700 20px/1 var(--f-ed);opacity:0;transform:scale(.85);transition:opacity .12s,transform .12s;pointer-events:none}
+#cue.on{opacity:1;transform:none}
+#stage[data-mode="live"] :is(#cue,#bPlay,#bAuto){display:none}
+/* 음성이 없는 장표: 프레젠테이션(음성) 모드를 숨긴다 */
+#stage.noaudio :is(#bMode,#bPlay,#bAuto,#startMode,#startModeNote){display:none}
+
+/* ── 시작 화면 · 도움말 ─────────────────────────────── */
+#start,#help{position:absolute;inset:0;z-index:20;background:var(--paper);padding:120px 128px 110px;display:flex;flex-direction:column;justify-content:space-between}
+#start .eyebrow{font:600 28px/1 var(--f-ed);letter-spacing:.04em;color:var(--ink-2)}
+#start h1{margin:0;font:800 112px/1.06 var(--f-ed);letter-spacing:-.03em}
+#start .sub{margin-top:28px;font:500 64px/1.2 var(--f-ed);color:var(--ink-2)}
+#start .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+#start .go{font-size:32px;padding:22px 40px;background:var(--ink);color:var(--paper);border-color:var(--ink)}
+#start .parts button{padding:12px 18px}
+#start .mode{display:flex;gap:4px;padding:5px;border:1px solid var(--rule);border-radius:999px;background:var(--sheet)}
+#start .mode button{border:0;background:none;padding:14px 26px}
+#start .mode button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+#start .note{font:500 24px/1.5 var(--f-ed);color:var(--ink-2)}
+#start .note.warn{color:var(--mark)}
+#start kbd,#help kbd{font:600 22px/1 var(--f-mono);padding:6px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--sheet);color:var(--ink)}
+#help h2{margin:0;font:700 72px/1.1 var(--f-ed)}
+#help dl{display:grid;grid-template-columns:260px 1fr;gap:22px 32px;margin:0;font:500 32px/1.3 var(--f-ed)}
+#help dt{text-align:right}
+#help dd{margin:0;color:var(--ink-2)}
+
+/* 파트별 장면 CSS 는 scenes/0N.js 의 css (그 파트 안에서만 쓰도록 [data-part="0N"] 로 시작) */
+
+/* ── 발표자 화면 (#presenter): 대본 · 다음 · 바로 가기 · 시간 · 발표 화면 미리보기 ─────── */
+#pv{position:fixed;inset:0;z-index:30;display:grid;gap:14px 18px;background:var(--paper);color:var(--ink);font-family:var(--f-ed);
+  --pvh:clamp(180px,min(48vh,calc(100vh - 476px)),600px);   /* 위: 미리보기 높이 · 아래: 대본. 대본 몫 385px(34px 넉 줄 + 다음 문단 두 줄)을 먼저 남기고 나머지를 미리보기에 */
+  grid-template-columns:calc(var(--pvh) * 16 / 9) minmax(0,1fr);grid-template-rows:auto var(--pvh) minmax(0,1fr);
+  padding-block:14px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  word-break:keep-all;overflow-wrap:break-word}
+#pv button{font:600 15px/1 var(--f-ed);color:var(--ink);background:var(--sheet);border:1px solid var(--rule);border-radius:999px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+#pv button:focus-visible{outline:3px solid var(--agent);outline-offset:2px}
+#pv button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.pv-top{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+.pv-where{display:flex;align-items:baseline;gap:12px;min-width:0;flex:1 1 320px}
+.pv-where b{font:700 22px/1.2 var(--f-ed)}
+.pv-where span{font:600 15px/1 var(--f-mono);color:var(--agent)}
+.pv-meta{display:flex;align-items:baseline;gap:14px;font:600 15px/1 var(--f-ed);color:var(--ink-2)}
+.pv-meta .big{font:700 22px/1 var(--f-ed);color:var(--ink);font-variant-numeric:tabular-nums}
+.pv-link{color:var(--mark)} .pv-link.ok{color:var(--agent)}
+.pv-acts{display:flex;gap:8px;flex-wrap:wrap}
+.pv-script{grid-column:1/-1;grid-row:3;min-height:0;overflow:auto;background:var(--sheet);border:1px solid var(--rule);border-radius:14px;padding:22px 26px;display:flex;flex-direction:column;gap:12px}
+.pv-label{font:600 13px/1 var(--f-ed);color:var(--ink-3)}
+#pvText{font:500 34px/1.55 var(--f-ed);color:var(--ink)}
+#pvText .ck{font-style:normal;font-weight:700;color:var(--agent);margin:0 4px}
+#pvText .ck.done{color:var(--ink-3)}
+#pvText .ck.next{color:var(--paper);background:var(--agent);border-radius:6px;padding:0 6px}
+#pvNext{font:500 20px/1.5 var(--f-ed);color:var(--ink-2);max-width:60em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.pv-side{grid-column:2;grid-row:2;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.pv-preview{grid-column:1;grid-row:2;position:relative;width:100%;height:100%;border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--paper)}
+.pv-preview #viewport{position:absolute;inset:0;width:100%;height:100%}
+.pv-ctl{display:flex;flex-wrap:wrap;gap:8px}
+.pv-note{margin:0;font:500 14px/1.5 var(--f-ed);color:var(--ink-2)}
+.pv-nav{display:flex;flex-direction:column;gap:8px}
+.pv-parts,.pv-paras{display:flex;flex-wrap:wrap;gap:6px}
+.pv-paras button{font:500 13px/1.2 var(--f-ed);border-radius:8px;padding:7px 10px;max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.pv-paras button b{font:600 12px/1 var(--f-mono);color:var(--agent);margin-right:6px}
+.pv-paras button.on b{color:var(--paper)}
+/* 대본 고치기: 켜면 대본 칸에서 바로 고치고 ▶ 를 끌어 옮긴다 */
+#pvEditBtn[aria-pressed="true"]{background:var(--agent);color:var(--paper);border-color:var(--agent)}
+.pv-editbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pv-editbar[hidden]{display:none}
+.pv-edcount{font:500 14px/1.4 var(--f-ed);color:var(--ink-2)}
+.pv-edited{color:var(--agent)}
+#pv.pv-editing .pv-script{border-color:var(--agent)}
+#pvText[contenteditable]{outline:none;caret-color:var(--agent);cursor:text}
+#pv.pv-editing #pvText .ck{cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none}
+#pvText .ck.dragging{opacity:.3}
+.pv-drop{position:fixed;width:3px;border-radius:2px;background:var(--agent);pointer-events:none;z-index:40}
+.pv-ghost{position:fixed;pointer-events:none;z-index:41;font:700 34px/1 var(--f-ed);color:var(--agent);transform:translate(-50%,-120%)}
+.pv-paras button.ed b::after{content:" ●";font-size:9px;vertical-align:middle}
+@media (max-width:820px){
+  #pv{grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-auto-rows:auto;align-content:start;overflow:auto}
+  .pv-preview{grid-column:1;grid-row:2;height:auto;aspect-ratio:16/9} .pv-script{grid-column:1;grid-row:3;min-height:auto;overflow:visible} .pv-side{grid-column:1;grid-row:4;min-height:auto;overflow:visible}
+  #pvText{font-size:22px}
+}
+</style>
+
+<div id="viewport">
+<div id="stage" class="ui">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <marker id="ah-ink" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ink"/></marker>
+      <marker id="ah-acc" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+    </defs>
+  </svg>
+
+  <nav id="progress" aria-label="파트"></nav>
+
+  <!-- 장면은 scenes/NN.js 가 window.SCENES 에 파트별 { clicks, css, html } 로 넣고, 엔진이 data.js 순서대로 section 을 붙인다 -->
+
+  <div id="sub" hidden></div>
+  <div id="cue" aria-hidden="true">▶ 클릭</div>
+  <footer id="foot">
+    <div class="where"><b id="fpart"></b><span class="pid" id="fpid"></span></div>
+    <div class="deck-title" id="deckTitle"></div>
+    <div class="ctl">
+      <button type="button" id="bHome" title="처음 화면으로">처음 화면</button>
+      <button type="button" id="bMode" title="장표만 보기 ↔ 프레젠테이션 (M)">프레젠테이션</button>
+      <button type="button" id="bPrev" title="이전 (←)">←</button>
+      <button type="button" id="bPlay" title="재생 / 멈춤 (Space)">재생</button>
+      <button type="button" id="bNext" title="다음 (→)">→</button>
+      <button type="button" id="bSub" aria-pressed="false" title="자막 (S)">자막</button>
+      <button type="button" id="bAuto" aria-pressed="true" title="다음 파트 자동 이어 재생 (A)">자동 이어</button>
+      <button type="button" id="bHelp" title="단축키 (H)">?</button>
+    </div>
+  </footer>
+
+  <div id="start">
+    <div class="eyebrow" id="startEyebrow"></div>
+    <div>
+      <h1 id="startTitle"></h1>
+      <div class="sub" id="startSub"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:26px">
+      <div class="row"><div class="mode" id="startMode" role="group" aria-label="진행 방식"><button type="button" data-mode="live">장표만 보기</button><button type="button" data-mode="rehearse">프레젠테이션</button></div><span class="note" id="startModeNote">M 으로 바꿉니다</span></div>
+      <div class="row"><button type="button" class="go" id="bGo">발표 시작</button><span class="note" id="goNote"></span></div>
+      <div class="row parts" id="startParts"><span class="note" style="margin-right:6px">파트부터</span></div>
+      <div class="note" id="fontNote">서체 확인 중…</div>
+      <div class="note warn" id="sceneNote" hidden></div>
+    </div>
+  </div>
+
+  <div id="help" hidden>
+    <h2>단축키</h2>
+    <dl>
+      <dt><kbd>M</kbd></dt><dd>장표만 보기(클릭) ↔ 프레젠테이션(음성)</dd>
+      <dt><kbd>→</kbd> <kbd>PgDn</kbd></dt><dd>장표만 보기: 다음 클릭 (클리커 다음) · 프레젠테이션: 다음 문단</dd>
+      <dt><kbd>←</kbd> <kbd>PgUp</kbd></dt><dd>장표만 보기: 누르기 직전 화면 · 프레젠테이션: 이전 문단</dd>
+      <dt><kbd>Space</kbd></dt><dd>장표만 보기: 다음 클릭 · 프레젠테이션: 재생 / 멈춤</dd>
+      <dt><kbd>Shift</kbd> + <kbd>←→</kbd></dt><dd>이전 · 다음 파트</dd>
+      <dt><kbd>1</kbd> ~ <kbd id="helpLast">9</kbd></dt><dd>파트로 바로 가기</dd>
+      <dt><kbd>S</kbd></dt><dd>자막: 대본 문단, 클릭할 곳은 ▶</dd>
+      <dt><kbd>A</kbd></dt><dd>프레젠테이션: 파트가 끝나면 다음 파트 자동 재생</dd>
+      <dt><kbd>F</kbd></dt><dd>전체 화면</dd>
+    </dl>
+    <div><button type="button" id="bHelpClose">닫기</button></div>
+  </div>
+</div>
+</div>
+
+<!-- 장면: data.js 의 파트마다 한 줄. 파트를 더하면 여기에도 더한다(없으면 시작 화면에 경고가 뜬다) -->
+<script src="scenes/01.js"></script>
+<script src="scenes/02.js"></script>
+<script src="data.js"></script>
+<script src="timing.js"></script>
+<script>
+(function () {
+  const D = window.DECK, T = window.TIMING || {};
+  const P = D.parts, M = D.meta || {};
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const stage = $('#stage'), viewport = $('#viewport');
+
+  // ── 발표 정보(data.js meta): 제목 · 부제 · 행사 · 아래 고정 제목 · 강조색 ──
+  const TITLE = M.title || '발표';
+  document.title = TITLE;
+  $('#startTitle').textContent = TITLE;
+  $('#startSub').textContent = M.subtitle || '';
+  $('#startEyebrow').textContent = M.eyebrow || '';
+  $('#deckTitle').textContent = M.footer || TITLE;
+  if (M.accent) document.documentElement.style.setProperty('--accent', M.accent);
+  $('#helpLast').textContent = String(Math.min(9, P.length));
+  const VOICE = M.voice || '녹음';                                   // 프레젠테이션 모드 음성 이름(예: 필재)
+  const HAS_AUDIO = P.some(p => p.audio);                            // 음성이 하나도 없으면 장표만 보기만 쓴다
+  const KEY = String(M.id || TITLE).replace(/\s+/g, '-');            // 같은 출처에서 연 다른 장표와 저장 · 두 창 싱크가 섞이지 않게
+
+  // ── 장면: scenes/NN.js 가 window.SCENES['NN'] = { clicks, css, html } 를 넣는다. data.js 순서대로 section 을 붙인다 ──
+  const MISSING = [];
+  (function buildScenes() {
+    const S = window.SCENES || {}, before = $('#sub');
+    let css = '';
+    P.forEach(p => {
+      const sc = S[p.id];
+      if (!sc) { MISSING.push(p.id); console.warn('[장표] 장면 파일 없음:', p.id); }
+      const sec = document.createElement('section');
+      sec.className = 'part'; sec.dataset.part = p.id; sec.setAttribute('aria-label', `${p.id} ${p.title}`);
+      if (sc && sc.clicks) sec.dataset.clicks = sc.clicks;
+      sec.innerHTML = (sc && sc.html) || '';
+      stage.insertBefore(sec, before);
+      if (sc && sc.css) css += `\n/* ${p.id} */\n${sc.css}`;
+    });
+    if (css) { const st = document.createElement('style'); st.id = 'scene-css'; st.textContent = css; document.head.appendChild(st); }
+  })();
+  // 브라우저 저장(모드 · 이어 재생 · 대본 고치기). 장표마다 이름을 나눈다. HTML 공유 서비스 같은 샌드박스 iframe 에선 읽기만 해도 예외가 나서 감싼다
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(`jsp.${KEY}.${k}`); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(`jsp.${KEY}.${k}`, JSON.stringify(v)); } catch (e) {} }
+  };
+  // 같은 파일을 두 역할로 연다. 기본은 발표 화면, #presenter 는 발표자 화면. 두 창은 아래 '두 창 싱크'로 맞춘다.
+  const ROLE = /^#presenter$/i.test(location.hash || '') ? 'presenter' : 'show';
+  let lastActAt = 0, applying = false, startedAt = 0;
+
+  // ── 화면 맞춤 ──
+  function fit() {
+    const r = viewport.getBoundingClientRect();
+    const s = Math.min(r.width / 1920, r.height / 1080);
+    stage.style.transform = `translate(-50%,-50%) scale(${s})`;
+  }
+  addEventListener('resize', fit); fit();
+
+  // ── 타이밍: 측정값이 있으면 쓰고, 없으면 글자 수로 추정한다 ──
+  const nz = s => s.replace(/\s/g, '').length;
+  // '@$' = 문단 끝(마지막 문장부호 앞). 말을 다 마친 뒤 누르는 전환
+  const phraseAt = (text, ph) => (ph === '$' ? text.replace(/[\s.!?…"'”’)]+$/, '').length : text.indexOf(ph));
+  function partTimes(part) {
+    const out = {};
+    if (part.paras.every(p => Array.isArray(T[p.id]))) {
+      part.paras.forEach(p => { const [cue, t0, t1] = T[p.id]; out[p.id] = { cue, t0, t1 }; });
+      out.dur = T[part.id] || out[part.paras[part.paras.length - 1].id].t1;
+      return out;
+    }
+    const RATE = 6.6, GAP = 1.15; let t = 0.35;
+    part.paras.forEach((p, i) => { const d = nz(p.text) / RATE; out[p.id] = { cue: i ? t - GAP / 2 : 0, t0: t, t1: t + d }; t += d + GAP; });
+    out.dur = t - GAP + 0.3;
+    console.log('[장표] 음성 측정값이 없어 글자 수로 추정:', part.id);   // 음성을 만들기 전에는 늘 이렇다
+    return out;
+  }
+  const TIMES = P.map(partTimes);
+  function at(pi, marker) {
+    const part = P[pi], tm = TIMES[pi];
+    const i0 = marker.indexOf('@');
+    const id = (i0 < 0 ? marker : marker.slice(0, i0)).trim();
+    const phrase = i0 < 0 ? '' : marker.slice(i0 + 1);
+    const pt = tm[id];
+    if (!pt) { console.warn('[장표] 대본에 없는 문단:', marker); return Infinity; }
+    if (!phrase) return pt.cue;
+    const text = part.paras.find(p => p.id === id).text, i = phraseAt(text, phrase);
+    if (i < 0) { console.warn('[장표] 대본에 없는 구절:', marker); return pt.cue; }
+    return Math.max(pt.cue, pt.t0 + (pt.t1 - pt.t0) * nz(text.slice(0, i)) / nz(text) - 0.15);
+  }
+
+  // ── 생성물: 셀 격자(data-cells) ──
+  function rnd(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+  $$('[data-cells]').forEach(el => {
+    const n = +el.dataset.cells, first = +(el.dataset.hlFirst || 0), spread = +(el.dataset.hlSpread || 0);
+    const hl = new Set();
+    if (spread) { const r = rnd(29); while (hl.size < spread) hl.add(Math.floor(r() * n)); }
+    let h = '';
+    for (let k = 0; k < n; k++) h += `<i style="--k:${k}" class="${(k < first || hl.has(k)) ? 'h' : ''}"></i>`;
+    el.innerHTML = h;
+  });
+
+  // ── 진행 바: 파트 길이 = 대본(음성) 길이 비율 ──
+  const prog = $('#progress');
+  P.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'seg'; b.style.setProperty('--g', TIMES[i].dur.toFixed(2));
+    b.title = `${p.id} ${p.title}`; b.setAttribute('aria-label', `${p.id} ${p.title}`);
+    b.innerHTML = `<span>${p.id}</span><i><b></b></i>`;
+    b.addEventListener('click', () => { goPart(i, 0); commit(); });
+    prog.appendChild(b);
+  });
+  const segs = $$('.seg', prog);
+
+  // ── 컴파일: 요소마다 등장·퇴장 시각을 미리 계산한다 ──
+  const sections = $$('.part');
+  const steps = (pi, str) => str.split('|').map(s => { const k = s.lastIndexOf(':'); return { t: at(pi, s.slice(0, k)), v: s.slice(k + 1) }; }).sort((a, b) => a.t - b.t);
+  const compiled = sections.map((sec, pi) => {
+    const items = [];
+    $$('[data-at],[data-until]', sec).forEach(el => items.push({ el, k: 'vis', a: el.dataset.at ? at(pi, el.dataset.at) : 0, u: el.dataset.until ? at(pi, el.dataset.until) : Infinity }));
+    $$('[data-state]', sec).forEach(el => items.push({ el, k: 'state', s: steps(pi, el.dataset.state), s0: el.dataset.state0 || '' }));
+    $$('[data-state0]:not([data-state])', sec).forEach(el => { el.dataset.s = el.dataset.state0; });
+    $$('[data-seq]', sec).forEach(el => items.push({ el, k: 'seq', s: steps(pi, el.dataset.seq).map(x => ({ t: x.t, v: +x.v })), from: el.dataset.from }));
+    $$('[data-type]', sec).forEach(el => { const full = el.textContent; el.textContent = ''; items.push({ el, k: 'type', a: at(pi, el.dataset.type), full }); });
+    return items;
+  });
+
+  // ── 클릭 지점 ──
+  // STEP_EVERY = true : 발표 모드는 모든 전환(문단 시작 · data-at · data-until · state · seq · type)에서 멈추고, 누를 때만 다음 전환으로 간다.
+  //                     MERGE 초 안에 몰린 전환은 한 번으로 합친다. 누른 뒤에는 페이드 · 타자 · 숫자만 실제 시간으로 끝까지 흐른다.
+  // STEP_EVERY = false: 예전 방식. 문단 시작 + data-clicks 구절에서만 멈추고, 그 사이는 LIVE_RATE 로 저절로 재생한다.
+  const STEP_EVERY = true, MERGE = 0.3;
+  const CLICKS = sections.map(sec => (sec.dataset.clicks || '').split('|').map(s => s.trim()).filter(Boolean));
+  const paraAt = (pi, t) => P[pi].paras.reduce((a, p) => (t >= TIMES[pi][p.id].cue - 0.01 ? p.id : a), P[pi].paras[0].id);
+  const markOf = (pi, m) => {   // 마커 → { t, id, i: 대본 속 구절 자리(문단 시작이면 -1) }
+    const k = m.indexOf('@'), id = (k < 0 ? m : m.slice(0, k)).trim(), para = P[pi].paras.find(p => p.id === id);
+    return { t: at(pi, m), id, i: k < 0 || !para ? -1 : phraseAt(para.text, m.slice(k + 1)) };
+  };
+  const stepMarks = s => s.split('|').map(x => x.slice(0, x.lastIndexOf(':')));
+  // 문단 시작 + clicks: 예전 방식의 클릭 지점, 촬영 도구의 --keys(Figma 보드용 핵심 화면)
+  const KEYS = sections.map((sec, pi) => {
+    const ks = P[pi].paras.map(p => TIMES[pi][p.id].cue);
+    CLICKS[pi].map(m => at(pi, m)).forEach(t => { if (ks.every(h => Math.abs(h - t) > 0.8)) ks.push(t); });
+    return ks.sort((a, b) => a - b);
+  });
+  // 멈춤 하나 = { t0: 누를 자리(첫 전환), t1: 누른 뒤 보여 줄 시각(합친 전환까지), id: 문단, i: ▶ 자리, n: 합친 전환 시각 수 }
+  const HOLDINFO = sections.map((sec, pi) => {
+    const cues = P[pi].paras.map(p => ({ t: TIMES[pi][p.id].cue, id: p.id, i: -1, cue: true }));
+    let ev;
+    if (STEP_EVERY) {
+      const ms = [];
+      $$('[data-at]', sec).forEach(el => ms.push(el.dataset.at));
+      $$('[data-until]', sec).forEach(el => ms.push(el.dataset.until));
+      $$('[data-state]', sec).forEach(el => ms.push(...stepMarks(el.dataset.state)));
+      $$('[data-seq]', sec).forEach(el => ms.push(...stepMarks(el.dataset.seq)));
+      $$('[data-type]', sec).forEach(el => ms.push(el.dataset.type));
+      ev = ms.map(m => markOf(pi, m)).filter(x => isFinite(x.t));
+    } else ev = CLICKS[pi].map(m => markOf(pi, m)).filter(x => isFinite(x.t) && cues.every(c => Math.abs(c.t - x.t) > 0.8));
+    const hs = [];
+    cues.concat(ev).sort((a, b) => a.t - b.t || (b.cue ? 1 : 0) - (a.cue ? 1 : 0)).forEach(x => {
+      const h = hs[hs.length - 1];   // 문단 시작은 늘 새 멈춤, 문단을 넘어서는 합치지 않는다
+      if (!h || x.cue || x.id !== h.id || x.t - h.t0 > (STEP_EVERY ? MERGE : 1e-6)) { hs.push({ t0: x.t, t1: x.t, id: x.id, i: x.cue ? -1 : x.i, cue: !!x.cue, real: !x.cue, ts: new Set([x.t.toFixed(3)]) }); return; }
+      h.t1 = Math.max(h.t1, x.t); h.ts.add(x.t.toFixed(3)); h.real = true;
+      if (!h.cue && x.i >= 0 && (h.i < 0 || x.i < h.i)) h.i = x.i;
+    });
+    // 문단 시작에 바뀌는 게 없으면 헛누름이 된다. 그 문단의 첫 전환까지 한 번에 보여 준다
+    if (STEP_EVERY) for (let b = hs.length - 2; b >= 0; b--) {
+      const h = hs[b], nx = hs[b + 1];
+      if (h.cue && !h.real && !nx.cue && nx.id === h.id) { h.t1 = nx.t1; nx.ts.forEach(t => h.ts.add(t)); h.real = true; hs.splice(b + 1, 1); }
+    }
+    return hs.map(h => ({ t0: h.t0, t1: h.t1, id: h.id, i: h.i, n: h.ts.size }));
+  });
+  const HOLD0 = HOLDINFO.map(hs => hs.map(h => h.t0));                       // 누를 자리(리허설 ▶ · 대본 ▶)
+  const HOLDS = HOLDINFO.map(hs => hs.map(h => (STEP_EVERY ? h.t1 : h.t0)));  // 멈춰서 보여 줄 시각
+  // 촬영 도구(tools/shoot.mjs)가 읽는다
+  window.__step = STEP_EVERY;
+  window.__holds = HOLDINFO;
+  window.__keys = KEYS.map((ks, pi) => ks.map(t => ({ t, id: paraAt(pi, t) })));
+  function ckHTML(pi, para, esc = s => s) {   // 대본 문단에 누를 자리 ▶ 를 끼운다(문단 시작은 표시하지 않는다)
+    let out = '', last = 0;
+    HOLDINFO[pi].filter(h => h.id === para.id && h.i >= 0).sort((a, b) => a.i - b.i)
+      .forEach(h => { out += esc(para.text.slice(last, h.i)) + `<i class="ck" data-t="${h.t0.toFixed(3)}">▶</i>`; last = h.i; });
+    return out + esc(para.text.slice(last));
+  }
+  function subHTML(pi, para) { return `<b>${para.id}</b>${ckHTML(pi, para)}`; }
+  const fmt = n => n.toLocaleString('ko-KR');
+  function render(t) {
+    // 발표 모드(STEP_EVERY)는 시계가 멈춰 있다. 타자 · 숫자는 누른 순간부터 흐른 실제 시간으로 끝까지 그린다
+    const ta = mode === 'live' && STEP_EVERY ? t + Math.max(0, performance.now() - beatAt) / 1000 : t;
+    for (const it of compiled[cur]) {
+      if (it.k === 'vis') {
+        const on = t >= it.a && t < it.u, off = t >= it.u;
+        if (it.el.classList.contains('on') !== on) it.el.classList.toggle('on', on);
+        if (it.el.classList.contains('off') !== off) it.el.classList.toggle('off', off);
+      } else if (it.k === 'state') {
+        let v = it.s0; for (const s of it.s) if (t >= s.t) v = s.v;
+        if (it.el.dataset.s !== v) it.el.dataset.s = v;
+      } else if (it.k === 'seq') {
+        let k = -1; it.s.forEach((s, i) => { if (t >= s.t) k = i; });
+        let txt = '';
+        if (k >= 0) {
+          const from = k ? it.s[k - 1].v : (it.from !== undefined ? +it.from : it.s[0].v), to = it.s[k].v;
+          const p = Math.min(1, (ta - it.s[k].t) / 0.9), e = 1 - Math.pow(1 - p, 3);
+          txt = fmt(Math.round(from + (to - from) * e));
+        }
+        if (it.el.textContent !== txt) it.el.textContent = txt;
+      } else if (it.k === 'type') {
+        const n = t < it.a ? 0 : Math.max(0, Math.floor((ta - it.a) * 16)), s = it.full.slice(0, n);
+        if (it.el.textContent !== s) it.el.textContent = s;
+        it.el.classList.toggle('typing', n > 0 && n < it.full.length);
+      }
+    }
+    // 진행 바 · 자막 · 아래 표시
+    const dur = TIMES[cur].dur;
+    segs.forEach((s, i) => { s.style.setProperty('--f', i < cur ? 1 : i > cur ? 0 : Math.min(1, t / dur).toFixed(4)); s.classList.toggle('now', i === cur); });
+    const ps = P[cur].paras; let k = 0;
+    ps.forEach((p, i) => { if (t >= TIMES[cur][p.id].cue - 0.01) k = i; });
+    const para = ps[k];
+    if (sub.dataset.id !== para.id) { sub.dataset.id = para.id; sub.innerHTML = subHTML(cur, para); }
+    $$('.ck', sub).forEach(el => el.classList.toggle('done', t >= +el.dataset.t - 0.001));
+    if (mode === 'live') {
+      const c0 = TIMES[cur][para.id].cue, c1 = k + 1 < ps.length ? TIMES[cur][ps[k + 1].id].cue : Infinity;
+      const hs = HOLDS[cur].filter(h => h >= c0 - 0.01 && h < c1 - 0.01);
+      fpid.textContent = `${para.id} · ${hs.filter(h => h <= t + 0.001).length}/${hs.length}`;
+    } else fpid.textContent = para.id;
+    pvUpdate(t);
+  }
+
+  // ── 음성 ──
+  const sub = $('#sub'), fpart = $('#fpart'), fpid = $('#fpid'), bPlay = $('#bPlay');
+  const audios = P.map(p => { const a = new Audio(); a.preload = p.audio ? 'auto' : 'none'; if (p.audio) a.src = p.audio; return a; });
+  let cur = 0, playing = false, pos = 0, posAt = 0, nextTimer = 0, wake = null;
+  let autoNext = store.get('auto', true);
+  // 모드: 주소의 ?mode= → 이 브라우저에 남은 값 → data.js meta.defaultMode(공유본은 'rehearse' 로 두면 열자마자 음성으로 재생) → 장표만 보기
+  const QMODE = (/[?&]mode=(live|rehearse)\b/.exec(location.search) || [])[1];
+  let mode = HAS_AUDIO ? (QMODE || store.get('mode', M.defaultMode === 'rehearse' ? 'rehearse' : 'live')) : 'live';
+  if (mode !== 'rehearse') mode = 'live';
+  if (!HAS_AUDIO) stage.classList.add('noaudio');
+  const A = () => audios[cur];
+
+  // 발표 모드의 시계
+  //   STEP_EVERY: 흐르지 않는다. 지금 멈춤(beat)의 시각에 머물고, 누를 때만 다음 멈춤으로 간다.
+  //   아니면   : 누른 지점부터 LIVE_RATE 로 흐르다가 다음 클릭 지점 0.02초 앞에서 멈춘다.
+  const LIVE_RATE = 0.85;   // 사람 말은 TTS 음성보다 조금 느리다
+  let beat = 0, beatAt = 0;
+  const beatEnd = () => (beat + 1 < HOLDS[cur].length ? HOLDS[cur][beat + 1] - 0.02 : TIMES[cur].dur);
+  const liveT = () => (STEP_EVERY ? HOLDS[cur][beat] : Math.min(beatEnd(), HOLDS[cur][beat] + Math.max(0, performance.now() - beatAt) / 1000 * LIVE_RATE));
+  function setBeat(b, done = false) { beat = b; beatAt = done ? -1e12 : performance.now(); }
+  function liveAt(t) {
+    beat = 0; HOLD0[cur].forEach((h, i) => { if (t >= h - 0.001) beat = i; });
+    if (STEP_EVERY) { beatAt = t > HOLDS[cur][beat] + 0.001 ? -1e12 : performance.now(); return; }   // 지난 시각이면 다 그려진 화면
+    beatAt = performance.now() - (t - HOLDS[cur][beat]) * 1000 / LIVE_RATE;
+  }
+  // 리허설: 음성을 내는 창(ownsAudio)은 음성 시각을, 따라가는 창은 받은 시각에서 흐른 만큼을 쓴다
+  const now = () => (mode === 'live' ? liveT() : !playing ? pos : ownsAudio() ? A().currentTime : pos + (performance.now() - posAt) / 1000);
+  audios.forEach((a, i) => {
+    a.addEventListener('ended', () => {
+      if (i !== cur) return;
+      pos = TIMES[cur].dur; render(pos);
+      if (autoNext && cur < P.length - 1) nextTimer = setTimeout(() => { goPart(cur + 1, 0, true); cue(); commit(); }, 1100);
+      else { playing = false; ui(); commit(); }
+    });
+    a.addEventListener('error', () => { if (i === cur && P[i].audio) flash('음성 파일을 불러오지 못했습니다 · ' + P[i].audio); });
+  });
+  function seek(t) {
+    pos = Math.max(0, t); posAt = performance.now();
+    if (ownsAudio()) {
+      const a = A();
+      if (a.readyState >= 1) a.currentTime = pos;
+      else a.addEventListener('loadedmetadata', () => { a.currentTime = pos; }, { once: true });
+    }
+    render(pos);
+  }
+  function play() {
+    if (mode === 'live' || !P[cur].audio) return;
+    clearTimeout(nextTimer);
+    playing = true; posAt = performance.now();
+    if (!ownsAudio()) { ui(); return; }   // 소리는 발표 화면이 낸다
+    const a = A();
+    if (a.readyState >= 1 && Math.abs(a.currentTime - pos) > 0.05) a.currentTime = pos;
+    a.play().catch(() => { playing = false; ui(); flash('재생하려면 화면을 한 번 누른 뒤 Space 를 누르세요'); });
+    keepAwake();
+    ui();
+  }
+  function keepAwake() { try { navigator.wakeLock && navigator.wakeLock.request('screen').then(w => { wake = w; }).catch(() => {}); } catch (e) {} }
+  function pause() {
+    clearTimeout(nextTimer);
+    pos = now() || pos; posAt = performance.now(); playing = false; A().pause();
+    try { wake && wake.release(); } catch (e) {} wake = null;
+    ui();
+  }
+  function goPart(i, t = 0, keepPlaying = playing) {
+    i = Math.max(0, Math.min(P.length - 1, i));
+    clearTimeout(nextTimer);
+    A().pause();
+    cur = i;
+    sections.forEach((s, k) => s.classList.toggle('active', k === cur));
+    fpart.textContent = `${P[cur].id} ${P[cur].title}`;
+    if (mode === 'live') { playing = false; pos = t; liveAt(t); render(liveT()); ui(); return; }
+    seek(t);
+    if (keepPlaying) play(); else { playing = false; ui(); }
+  }
+  function paraIndex(t) { let k = 0; P[cur].paras.forEach((p, i) => { if (t >= TIMES[cur][p.id].cue - 0.01) k = i; }); return k; }
+  function nextPara() {
+    const ps = P[cur].paras, k = paraIndex(now());
+    if (k + 1 < ps.length) seek(TIMES[cur][ps[k + 1].id].cue + 0.01);
+    else if (cur < P.length - 1) goPart(cur + 1, 0);
+  }
+  function prevPara() {
+    const t = now(), ps = P[cur].paras, k = paraIndex(t), c = TIMES[cur][ps[k].id].cue;
+    if (t - c > 1.5) seek(c + 0.01);
+    else if (k > 0) seek(TIMES[cur][ps[k - 1].id].cue + 0.01);
+    else if (cur > 0) { const pp = P[cur - 1].paras; goPart(cur - 1, TIMES[cur - 1][pp[pp.length - 1].id].cue + 0.01); }
+  }
+  // 발표 모드: 다음 = 다음 멈춤(STEP_EVERY 면 다음 전환 하나), 이전 = 누르기 직전 화면
+  function next() {
+    if (mode !== 'live') return nextPara();
+    if (beat + 1 < HOLDS[cur].length) setBeat(beat + 1);
+    else if (cur < P.length - 1) goPart(cur + 1, 0);
+  }
+  function prev() {
+    if (mode !== 'live') return prevPara();
+    if (beat > 0) setBeat(beat - 1, true);
+    else if (cur > 0) goPart(cur - 1, TIMES[cur - 1].dur);
+  }
+  function setMode(m) {
+    if (m === mode || (m !== 'live' && m !== 'rehearse') || (m === 'rehearse' && !HAS_AUDIO)) return;
+    const t = now();
+    if (playing) pause();
+    mode = m; store.set('mode', m);
+    if (m === 'live') { liveAt(t); render(liveT()); } else seek(t);
+    modeUI(); ui();
+  }
+
+  // ── 화면 장치 ──
+  let uiTimer = 0;
+  const presenting = () => (mode === 'live' ? start.hidden : playing);
+  function ui() {
+    bPlay.textContent = playing ? '멈춤' : '재생';
+    stage.classList.toggle('ui', !presenting());
+    if (presenting()) { clearTimeout(uiTimer); }
+  }
+  function poke() {
+    if (!presenting()) return;
+    stage.classList.add('ui'); clearTimeout(uiTimer);
+    uiTimer = setTimeout(() => { if (presenting()) stage.classList.remove('ui'); }, 2200);
+  }
+  addEventListener('mousemove', poke);
+  function flash(msg) { fpart.textContent = msg; setTimeout(() => { fpart.textContent = `${P[cur].id} ${P[cur].title}`; }, 4000); }
+  const cueEl = $('#cue'); let cueTimer = 0;
+  function cue() { cueEl.classList.add('on'); clearTimeout(cueTimer); cueTimer = setTimeout(() => cueEl.classList.remove('on'), 650); }
+  // 자막(대본)이 청중 화면에 남지 않게. 켠 상태를 저장하지 않고, 발표자 창과 이어진 발표 화면에서는 켜지지 않는다
+  const subsBlocked = () => ROLE === 'show' && (!!window.opener || performance.now() - peers.presenter < 4500);
+  let subsOn = false;
+  function setSubs(v) { subsOn = !!v && !subsBlocked(); sub.hidden = !subsOn; stage.classList.toggle('subs', subsOn); $('#bSub').setAttribute('aria-pressed', String(subsOn)); }
+  function setAuto(v) { autoNext = v; $('#bAuto').setAttribute('aria-pressed', String(v)); store.set('auto', v); }
+  const help = $('#help'), start = $('#start');
+  function toggleHelp(v = help.hidden) { help.hidden = !v; }
+  function toggleFull() {
+    try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); } catch (e) {}
+  }
+  function begin(i) { start.hidden = true; startedAt = startedAt || Date.now(); goPart(i, 0, mode === 'rehearse'); keepAwake(); ui(); commit(); }
+  // 처음 화면: 재생을 멈추고 01 처음으로 되돌린 뒤 시작 화면을 다시 띄운다(다른 창에도 알린다)
+  function home() { if (playing) pause(); goPart(0, 0, false); start.hidden = false; ui(); commit(); }
+  const TOTAL = Math.round(TIMES.reduce((a, x) => a + x.dur, 0)), NCLICK = HOLDS.reduce((a, h) => a + h.length, 0);
+  function modeUI() {
+    const live = mode === 'live';
+    stage.dataset.mode = mode;
+    $('#bMode').textContent = live ? '장표만 보기' : '프레젠테이션';
+    $$('#startMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+    $('#bGo').textContent = live ? '발표 시작' : '재생 시작';
+    $('#goNote').textContent = live
+      ? `→ · Space · 클리커로 넘깁니다 · 클릭 ${NCLICK}번`
+      : `${VOICE} 음성 ${Math.floor(TOTAL / 60)}분 ${TOTAL % 60}초 · 자동으로 넘어갑니다`;
+  }
+
+  $('#bPrev').addEventListener('click', () => { prev(); commit(); });
+  $('#bNext').addEventListener('click', () => { next(); commit(); });
+  $('#bHome').addEventListener('click', home);
+  $('#bMode').addEventListener('click', () => { setMode(mode === 'live' ? 'rehearse' : 'live'); commit(); });
+  $$('#startMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); commit(); }));
+  bPlay.addEventListener('click', () => { playing ? pause() : play(); commit(); });
+  $('#bSub').addEventListener('click', () => setSubs(!subsOn));
+  $('#bAuto').addEventListener('click', () => setAuto(!autoNext));
+  $('#bHelp').addEventListener('click', () => toggleHelp(true));
+  $('#bHelpClose').addEventListener('click', () => toggleHelp(false));
+  $('#bGo').addEventListener('click', () => begin(cur));
+  P.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = p.id; b.title = p.title;
+    b.addEventListener('click', () => begin(i));
+    $('#startParts').appendChild(b);
+  });
+
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target instanceof Element && e.target.closest('#pvText[contenteditable]')) return;   // 발표자 대본을 고치는 중. 글자 입력이 장표를 넘기지 않게
+    // 마우스로 누른 버튼에 포커스가 남아 있으면 Space 가 그 버튼까지 한 번 더 누른다
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
+    const c = e.code, live = mode === 'live';
+    if (!help.hidden && (c === 'Escape' || c === 'KeyH')) { e.preventDefault(); toggleHelp(false); return; }
+    if (!start.hidden) {
+      if (c === 'Space' || c === 'Enter') { e.preventDefault(); begin(cur); }
+      else if (/^Digit[1-9]$/.test(c) && +c.slice(5) <= P.length) begin(+c.slice(5) - 1);
+      else if (c === 'KeyM') { setMode(live ? 'rehearse' : 'live'); commit(); }
+      return;
+    }
+    if (c === 'Space') { e.preventDefault(); live ? next() : playing ? pause() : play(); commit(); }
+    else if (c === 'KeyK' && !live) { playing ? pause() : play(); commit(); }
+    else if (c === 'ArrowRight' || c === 'PageDown') { e.preventDefault(); e.shiftKey ? goPart(cur + 1, 0) : next(); if (!live) poke(); commit(); }
+    else if (c === 'ArrowLeft' || c === 'PageUp') { e.preventDefault(); e.shiftKey ? goPart(cur - 1, 0) : prev(); if (!live) poke(); commit(); }
+    else if (c === 'KeyM') { setMode(live ? 'rehearse' : 'live'); commit(); }
+    else if (c === 'KeyS') setSubs(!subsOn);
+    else if (c === 'KeyA') setAuto(!autoNext);
+    else if (c === 'KeyF') toggleFull();
+    else if (c === 'KeyH' || e.key === '?') toggleHelp();
+    else if (/^Digit[1-9]$/.test(c) && +c.slice(5) <= P.length) { goPart(+c.slice(5) - 1, 0); commit(); }
+  });
+
+  let lastT = -1, lastTick = 0;
+  function loop() {
+    const t = mode === 'live' ? liveT() : playing ? now() : null;
+    // 발표 모드(STEP_EVERY): 시계는 멈춰 있어도 누른 뒤 몇 초는 타자 · 숫자를 계속 그린다
+    const anim = mode === 'live' && STEP_EVERY && performance.now() - beatAt < 6000;
+    if (t !== null && (t !== lastT || anim)) {
+      // 리허설: 음성이 누를 자리를 지나면 오른쪽 아래에 ▶ 를 띄운다
+      if (mode !== 'live' && t > lastT && t - lastT < 0.5 && HOLD0[cur].some(h => h > 0.05 && h > lastT && h <= t)) cue();
+      render(t); lastT = t;
+      // 리허설: 음성을 내는 창이 0.3초마다 시각을 알려, 따라가는 창이 어긋나지 않게 한다
+      if (mode !== 'live' && ownsAudio() && performance.now() - lastTick > 300) { lastTick = performance.now(); send('time', { cur, pos: t, playing: true }); }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ── 두 창 싱크: 발표 화면 ↔ 발표자 화면 ──
+  // 어느 창에서 조작하든 상태(파트 · 클릭 지점 · 모드 · 재생)를 서로 보내고, 가장 최근 조작이 이긴다.
+  // 통로는 BroadcastChannel(같은 출처의 모든 탭) + 서로 연 창끼리의 postMessage(파일로 열어도 된다). 채널은 장표마다 따로.
+  const ME = Math.random().toString(36).slice(2, 10);
+  const peers = { show: -1e9, presenter: -1e9 }, known = new Set(), seenSeq = {};
+  let seqNo = 0, peerWin = window.opener || null, bc = null;
+  try { bc = new BroadcastChannel('jsp-' + KEY); } catch (e) {}
+  function send(type, data) {
+    const m = Object.assign({ jsp: KEY, from: ME, role: ROLE, seq: ++seqNo, type }, data);
+    try { if (bc) bc.postMessage(m); } catch (e) {}
+    try { if (peerWin && !peerWin.closed) peerWin.postMessage(m, '*'); } catch (e) {}
+  }
+  // 리허설 음성은 한 창에서만. 발표 화면이 있으면 발표 화면, 발표자 창만 열려 있으면 발표자 창
+  function ownsAudio() { return ROLE === 'show' || performance.now() - peers.show > 4500; }
+  function snapshot() {
+    return { cur, mode, started: start.hidden, beat, done: beatAt < -1e11, elapsed: Math.max(0, performance.now() - beatAt),
+      playing, pos: mode === 'live' ? 0 : now(), actAt: lastActAt, startedAt };
+  }
+  const share = () => send('state', snapshot());
+  function commit() { if (applying) return; lastActAt = Date.now(); share(); }
+  function apply(m) {
+    if (!(m.actAt > lastActAt)) return;
+    applying = true;
+    try {
+      lastActAt = m.actAt; startedAt = m.startedAt || 0;
+      if (m.mode !== mode) setMode(m.mode);
+      if (m.started && !start.hidden) { start.hidden = true; keepAwake(); }
+      else if (!m.started && start.hidden) start.hidden = false;   // 다른 창에서 처음 화면 버튼을 눌렀다
+      if (m.mode === 'live') {
+        if (m.cur !== cur) goPart(m.cur, 0, false);
+        beat = Math.max(0, Math.min(m.beat, HOLDS[cur].length - 1));
+        beatAt = m.done ? -1e12 : performance.now() - m.elapsed;
+        lastT = -1; render(liveT());
+      } else {
+        if (m.cur !== cur) goPart(m.cur, m.pos, false); else seek(m.pos);
+        if (m.playing) play(); else if (playing) pause();
+      }
+      ui();
+    } finally { applying = false; }
+  }
+  let wasOwner = ownsAudio();
+  function handover() {   // 발표자 창이 내던 소리를 새로 열린 발표 화면에 넘기고, 발표 화면이 닫히면 다시 받는다
+    const o = ownsAudio();
+    if (o === wasOwner) return;
+    if (!o) { if (playing && !A().paused) { pos = A().currentTime; posAt = performance.now(); A().pause(); } }
+    else if (mode === 'rehearse' && playing) { const tv = pos + (performance.now() - posAt) / 1000; wasOwner = o; seek(tv); A().play().catch(() => {}); }
+    wasOwner = o;
+  }
+  function onMsg(m, src) {
+    if (!m || m.jsp !== KEY || m.from === ME) return;
+    if (seenSeq[m.from] >= m.seq) return;
+    seenSeq[m.from] = m.seq;
+    if (src && !peerWin) peerWin = src;
+    const fresh = !known.has(m.from);
+    known.add(m.from);
+    peers[m.role] = performance.now();
+    if (ROLE === 'show' && m.role === 'presenter' && subsOn) setSubs(false);   // 발표자 창이 붙으면 청중 화면의 자막은 끈다
+    handover();
+    if (fresh && lastActAt > 0) share();   // 새로 열린 창에 지금 상태를 알려 준다
+    if (m.type === 'state') apply(m);
+    else if (m.type === 'time' && mode === 'rehearse' && !ownsAudio()) {
+      if (m.cur !== cur) { applying = true; try { goPart(m.cur, m.pos, false); } finally { applying = false; } }
+      pos = m.pos; posAt = performance.now(); playing = m.playing; ui();
+    }
+  }
+  if (bc) bc.onmessage = e => onMsg(e.data);
+  addEventListener('message', e => onMsg(e.data, e.source));
+  setInterval(() => { send('hello', {}); handover(); }, 1500);
+  window.deckDebug = { role: ROLE, snap: () => snapshot(), owns: () => ownsAudio(), audio: () => ({ paused: A().paused, t: +A().currentTime.toFixed(2) }),
+    // 아직 덜 그려진 타자 · 숫자 수(발표 모드 확인용)
+    pending: () => { const t = now(); return compiled[cur].filter(it => it.k === 'type' ? t >= it.a && it.el.textContent !== it.full
+      : it.k === 'seq' ? (k => k >= 0 && it.el.textContent !== fmt(it.s[k].v))(it.s.reduce((a, s, i) => (t >= s.t ? i : a), -1)) : false).length; } };
+
+  // ── 발표자 화면 (#presenter) ──
+  let pvUpdate = () => {};
+  function goPara(pi, id) {
+    if (!start.hidden) { start.hidden = true; startedAt = startedAt || Date.now(); keepAwake(); }
+    const c = TIMES[pi][id].cue;
+    if (mode === 'live') goPart(pi, c); else goPart(pi, c + 0.01, playing);
+    commit();
+  }
+  if (ROLE === 'presenter') {
+    document.title = '발표자 화면 · ' + document.title;
+    const pv = document.createElement('div');
+    pv.id = 'pv';
+    pv.innerHTML = `
+      <header class="pv-top">
+        <div class="pv-where"><b id="pvPart"></b><span id="pvPara"></span><span id="pvClick"></span></div>
+        <div class="pv-meta"><span id="pvMode"></span><span>경과 <span class="big" id="pvElapsed">0:00</span></span><span>지금 <span class="big" id="pvClock"></span></span><span class="pv-link" id="pvLink"></span></div>
+        <div class="pv-acts"><button type="button" id="pvStart">발표 시작</button><button type="button" id="pvOpen">발표 화면 열기</button><button type="button" id="pvTimer">경과 0으로</button></div>
+      </header>
+      <section class="pv-script" aria-label="대본"><div class="pv-label">지금 문단 · 주황 ▶ 에서 누른다<span class="pv-edited" id="pvEdited" hidden> · 수정됨</span><span id="pvEditHint" hidden> · 글자는 바로 고치고, ▶ 는 끌어서 옮깁니다(Esc 로 끝)</span></div><div id="pvText"></div><div class="pv-label">다음</div><div id="pvNext"></div></section>
+      <div class="pv-preview" id="pvPreview" aria-label="발표 화면 미리보기"></div>
+      <aside class="pv-side">
+        <div class="pv-ctl"><button type="button" id="pvPrev">← 이전</button><button type="button" id="pvNextBtn">다음 →</button><button type="button" id="pvPlay">재생</button><button type="button" id="pvModeBtn"></button><button type="button" id="pvEditBtn" aria-pressed="false">대본 고치기</button></div>
+        <div class="pv-editbar" id="pvEditBar" hidden><button type="button" id="pvReset">이 문단 원래대로</button><button type="button" id="pvCopy">수정 내용 복사</button><span class="pv-edcount" id="pvEdCount"></span></div>
+        <nav class="pv-nav" aria-label="바로 가기"><div class="pv-parts" id="pvParts"></div><div class="pv-paras" id="pvParas"></div></nav>
+        <p class="pv-note" id="pvNote">→ · Space · 클리커는 어느 창에서 눌러도 두 화면이 같이 넘어갑니다.</p>
+      </aside>
+      <div class="pv-drop" id="pvDrop" hidden></div><div class="pv-ghost" id="pvGhost" hidden>▶</div>`;
+    document.body.appendChild(pv);
+    $('#pvPreview').appendChild(viewport);
+    try { new ResizeObserver(fit).observe($('#pvPreview')); } catch (e) {}
+    const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const setText = (sel, s) => { const el = $(sel); if (el && el.textContent !== s) el.textContent = s; };
+    const two = n => String(n).padStart(2, '0');
+
+    // ── 대본 고치기: 연습하면서 대본을 자기 말투로 고치고, ▶ 를 실제로 누르는 자리로 끌어 옮긴다.
+    //    고친 글은 이 브라우저에 문단별로 남고 발표자 대본에만 쓰인다. '수정 내용 복사' → tools/apply_edits.py 가 원본(data.js · scenes)에 반영한다.
+    const pvText = $('#pvText'), ghost = $('#pvGhost'), dropEl = $('#pvDrop'), EDITS = 'scriptEdits';
+    const paraOf = (pi, id) => P[pi].paras.find(p => p.id === id);
+    // 문단별 ▶(멈춤) 와 그 ▶ 가 대표하는 원래 장면 마커(keys). 문단 시작에 합쳐진 마커는 cueKeys
+    const MARKS = sections.map((sec, pi) => {
+      const ms = new Set(CLICKS[pi]);
+      $$('[data-at]', sec).forEach(el => ms.add(el.dataset.at));
+      $$('[data-until]', sec).forEach(el => ms.add(el.dataset.until));
+      $$('[data-state]', sec).forEach(el => stepMarks(el.dataset.state).forEach(m => ms.add(m)));
+      $$('[data-seq]', sec).forEach(el => stepMarks(el.dataset.seq).forEach(m => ms.add(m)));
+      $$('[data-type]', sec).forEach(el => ms.add(el.dataset.type));
+      const out = {};
+      P[pi].paras.forEach(p => {
+        const hs = HOLDINFO[pi].filter(h => h.id === p.id);
+        out[p.id] = { hs, marks: hs.filter(h => h.i >= 0).sort((a, b) => a.i - b.i).map(h => ({ t: h.t0, at: h.i, keys: [], h })), cueKeys: [] };
+      });
+      ms.forEach(m => {
+        const k = m.indexOf('@'), o = k < 0 ? null : out[m.slice(0, k).trim()];
+        if (!o) return;
+        const t = at(pi, m);
+        const h = o.hs.find(x => t >= x.t0 - 0.001 && t <= x.t1 + 0.001) || o.hs.reduce((a, x) => (!a || Math.abs(x.t0 - t) < Math.abs(a.t0 - t) ? x : a), null);
+        const mk = o.marks.find(x => x.h === h);
+        (mk ? mk.keys : o.cueKeys).push(m);
+      });
+      return out;
+    });
+    const baseOf = (pi, id) => { const o = MARKS[pi][id]; return { text: paraOf(pi, id).text, marks: o.marks.map(x => ({ t: x.t, at: x.at, keys: x.keys.slice() })), cueKeys: o.cueKeys.slice() }; };
+    const inner = ms => ms.filter(x => x.at > 0);   // 문단 맨 앞 ▶ 는 문단 시작과 한 번 누름으로 합쳐지니 비교에서 뺀다
+    const sameAs = (m, b) => m.text === b.text && inner(m.marks).length === inner(b.marks).length && inner(m.marks).every((x, j) => x.at === inner(b.marks)[j].at);
+    const partOf = id => P.findIndex(p => p.paras.some(q => q.id === id));
+    let edits = store.get(EDITS, {});
+    Object.keys(edits).forEach(id => { const pi = partOf(id); if (pi < 0 || sameAs(edits[id], baseOf(pi, id))) delete edits[id]; });   // 원본에 이미 반영된 수정은 지운다
+    const saveEdits = () => store.set(EDITS, edits);
+    let curModel = null, curPara = null, editOn = false, composing = false, saveTimer = 0, drag = null;
+    const modelOf = (pi, id) => (edits[id] ? JSON.parse(JSON.stringify(edits[id])) : baseOf(pi, id));
+    const modelHTML = m => {
+      let out = '', last = 0;
+      m.marks.forEach((x, j) => { out += esc(m.text.slice(last, x.at)) + `<i class="ck" data-t="${x.t.toFixed(3)}" data-j="${j}" contenteditable="false">▶</i>`; last = x.at; });
+      return out + esc(m.text.slice(last));
+    };
+    // 대본 칸 → { 글, ▶ 자리 }. ▶ 는 0글자짜리 섬이다
+    function readDOM() {
+      let text = ''; const pos = {};
+      (function walk(el) {
+        el.childNodes.forEach(c => {
+          if (c.nodeType === 3) text += c.nodeValue;
+          else if (c.nodeType === 1 && c.classList.contains('ck')) pos[c.dataset.j] = text.length;
+          else if (c.nodeName === 'BR') text += ' ';
+          else if (c.nodeType === 1) walk(c);
+        });
+      })(pvText);
+      return { text, pos };
+    }
+    // 공백 · 줄바꿈은 한 칸으로, 앞뒤 공백은 지운다. ▶ 자리도 함께 옮기고, 공백 위의 ▶ 는 다음 글자 앞으로
+    function tidy(text, ats) {
+      let out = '', sp = true; const map = new Array(text.length + 1);
+      for (let i = 0; i < text.length; i++) {
+        map[i] = out.length;
+        if (/\s/.test(text[i])) { if (!sp) { out += ' '; sp = true; } } else { out += text[i]; sp = false; }
+      }
+      map[text.length] = out.length;
+      if (out.endsWith(' ')) out = out.slice(0, -1);
+      const fix = a => { let k = Math.min(map[Math.max(0, Math.min(a, text.length))], out.length); while (k < out.length && out[k] === ' ') k++; return k; };
+      return { text: out, ats: ats.map(fix) };
+    }
+    const lenOf = c => (c.nodeType === 3 ? c.nodeValue.length : c.classList && c.classList.contains('ck') ? 0 : c.nodeName === 'BR' ? 1 : c.textContent.length);
+    function offsetOf(node, o) {   // DOM 위치 → 글자 위치
+      if (node === pvText) { let n = 0; for (let k = 0; k < o && k < pvText.childNodes.length; k++) n += lenOf(pvText.childNodes[k]); return n; }
+      let n = 0;
+      for (const c of pvText.childNodes) {
+        if (c === node) return n + (c.nodeType === 3 ? o : 0);
+        if (c.contains(node)) return n;
+        n += lenOf(c);
+      }
+      return null;
+    }
+    function nodeAt(off) {   // 글자 위치 → (텍스트 노드, 그 안 위치)
+      let n = 0, last = null;
+      for (const c of pvText.childNodes) {
+        if (c.nodeType === 3) { if (off <= n + c.nodeValue.length) return [c, off - n]; last = c; }
+        n += lenOf(c);
+      }
+      return last ? [last, last.nodeValue.length] : [pvText, pvText.childNodes.length];
+    }
+    const caretOffset = () => { const s = getSelection(); return s.rangeCount && pvText.contains(s.anchorNode) ? offsetOf(s.anchorNode, s.anchorOffset) : null; };
+    function setCaret(off) {
+      const [node, o] = nodeAt(off), r = document.createRange(), s = getSelection();
+      r.setStart(node, o); r.collapse(true); s.removeAllRanges(); s.addRange(r);
+    }
+    function edUI() {
+      const n = Object.keys(edits).length, mine = !!(curPara && edits[curPara.id]);
+      $('#pvEdited').hidden = !mine;
+      $('#pvEdCount').textContent = `수정한 문단 ${n}개`;
+      $('#pvCopy').disabled = !n; $('#pvReset').disabled = !mine;
+      $$('#pvParas button').forEach(b => b.classList.toggle('ed', !!edits[b.dataset.id]));
+    }
+    function paint(t) {   // 지난 ▶ 는 흐리게, 다음에 누를 ▶ 는 주황 상자
+      if (composing) return;
+      let nextMarked = false;
+      $$('#pvText .ck').forEach(el => {
+        const d = t >= +el.dataset.t - 0.001, n = !d && !nextMarked && mode === 'live';
+        if (n) nextMarked = true;
+        el.classList.toggle('done', d); el.classList.toggle('next', n);
+      });
+    }
+    function renderScript(pi, para) {
+      if (editOn && curModel) saveNow();
+      curPara = { pi, id: para.id };
+      curModel = modelOf(pi, para.id);
+      pvText.innerHTML = modelHTML(curModel);
+      edUI();
+    }
+    function commitModel(rerender) {
+      const { pi, id } = curPara;
+      if (sameAs(curModel, baseOf(pi, id))) delete edits[id];
+      else edits[id] = { text: curModel.text, orig: paraOf(pi, id).text, marks: curModel.marks.map(x => ({ keys: x.keys, t: +x.t.toFixed(3), at: x.at })), cueKeys: curModel.cueKeys };
+      saveEdits();
+      if (rerender) {
+        const off = caretOffset();
+        pvText.innerHTML = modelHTML(curModel); paint(now());
+        if (off != null && editOn) setCaret(Math.min(off, curModel.text.length));
+      }
+      edUI();
+    }
+    function saveNow() {   // 대본 칸을 읽어 저장한다. ▶ 가 글자와 함께 지워졌으면 그 근처에 되살린다
+      clearTimeout(saveTimer);
+      if (!editOn || !curModel || composing) return;
+      const { text, pos } = readDOM();
+      let lost = false;
+      const raw = curModel.marks.map((x, j) => (pos[j] != null ? pos[j] : (lost = true, Math.min(x.at, text.length))));
+      for (let j = 1; j < raw.length; j++) raw[j] = Math.max(raw[j], raw[j - 1]);
+      const td = tidy(text, raw);
+      curModel.text = td.text; curModel.marks.forEach((x, j) => { x.at = td.ats[j]; });
+      commitModel(lost);
+    }
+    const queueSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 400); };
+    pvText.addEventListener('compositionstart', () => { composing = true; });
+    pvText.addEventListener('compositionend', () => { composing = false; queueSave(); });
+    pvText.addEventListener('input', e => { if (!e.isComposing && !composing) queueSave(); });
+    pvText.addEventListener('keydown', e => {
+      if (e.key === 'Enter') e.preventDefault();   // 대본 문단은 한 줄 글이다
+      else if (e.key === 'Escape') { e.preventDefault(); setEdit(false); }
+    });
+    // ▶ 끌어 옮기기: 같은 문단, 앞뒤 ▶ 사이에서만 움직인다(누르는 순서는 그대로)
+    function caretBox(off) {
+      const [node, o] = nodeAt(off);
+      if (node.nodeType !== 3) return null;
+      const r = document.createRange();
+      r.setStart(node, o); r.collapse(true);
+      const b = r.getClientRects()[0];
+      if (b && b.height) return { left: b.left, top: b.top, height: b.height };
+      if (o > 0) { r.setStart(node, o - 1); r.setEnd(node, o); const q = r.getBoundingClientRect(); return { left: q.right, top: q.top, height: q.height }; }
+      return null;
+    }
+    function moveDrag(e) {
+      ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+      const r = document.caretRangeFromPoint && document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (r && pvText.contains(r.startContainer)) { const off = offsetOf(r.startContainer, r.startOffset); if (off != null) drag.at = Math.max(drag.lo, Math.min(drag.hi, off)); }
+      const box = caretBox(drag.at);
+      if (box) Object.assign(dropEl.style, { left: box.left - 1.5 + 'px', top: box.top + 'px', height: box.height + 'px' });
+    }
+    function endDrag(ok) {
+      const d = drag; drag = null;
+      ghost.hidden = true; dropEl.hidden = true;
+      if (!d) return;
+      d.el.classList.remove('dragging');
+      if (!ok || d.at === d.from) return;
+      const { text, pos } = readDOM();
+      const td = tidy(text, curModel.marks.map((x, j) => (j === d.j ? d.at : pos[j] != null ? pos[j] : x.at)));
+      curModel.text = td.text; curModel.marks.forEach((x, j) => { x.at = td.ats[j]; });
+      commitModel(true);
+    }
+    pvText.addEventListener('pointerdown', e => {
+      const ck = e.target instanceof Element && e.target.closest('.ck');
+      if (!editOn || !ck || e.button !== 0) return;
+      e.preventDefault();
+      saveNow();
+      const j = +ck.dataset.j, el = pvText.querySelector(`.ck[data-j="${j}"]`), { text, pos } = readDOM();
+      const lo = j > 0 ? pos[j - 1] + 1 : 0, hi = j + 1 < curModel.marks.length ? pos[j + 1] - 1 : text.length - 1;
+      if (!el || lo > hi) return;
+      drag = { j, el, lo, hi, at: pos[j], from: pos[j], pid: e.pointerId };
+      el.classList.add('dragging');
+      try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      ghost.hidden = false; dropEl.hidden = false; moveDrag(e);
+    });
+    pvText.addEventListener('pointermove', e => { if (drag && e.pointerId === drag.pid) moveDrag(e); });
+    pvText.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.pid) endDrag(true); });
+    pvText.addEventListener('pointercancel', () => { if (drag) endDrag(false); });
+    function setEdit(v) {
+      if (!v && editOn) saveNow();
+      editOn = v;
+      pv.classList.toggle('pv-editing', v);
+      const b = $('#pvEditBtn'); b.setAttribute('aria-pressed', String(v)); b.textContent = v ? '고치기 끝' : '대본 고치기';
+      $('#pvEditBar').hidden = !v; $('#pvEditHint').hidden = !v;
+      if (v) { pvText.setAttribute('contenteditable', 'plaintext-only'); pvText.focus(); if (curModel) setCaret(curModel.text.length); }
+      else { pvText.removeAttribute('contenteditable'); pvText.blur(); }
+      edUI();
+    }
+    $('#pvEditBtn').addEventListener('click', () => setEdit(!editOn));
+    $('#pvReset').addEventListener('click', () => {
+      if (!curPara) return;
+      clearTimeout(saveTimer);
+      delete edits[curPara.id]; saveEdits();
+      curModel = baseOf(curPara.pi, curPara.id);
+      pvText.innerHTML = modelHTML(curModel); paint(now()); edUI();
+    });
+    $('#pvCopy').addEventListener('click', () => {
+      saveNow();
+      const json = JSON.stringify(edits, null, 1), b = $('#pvCopy');
+      const done = ok => { b.textContent = ok ? '복사했습니다' : '복사 실패 · 다시 눌러 주세요'; setTimeout(() => { b.textContent = '수정 내용 복사'; }, 2500); };
+      const fallback = () => {
+        const ta = document.createElement('textarea'); let ok = false;
+        ta.value = json; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(ta); ta.select();
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        ta.remove(); done(ok);
+      };
+      try { navigator.clipboard.writeText(json).then(() => done(true), fallback); } catch (e) { fallback(); }
+    });
+    // tools/shoot.mjs --presenter 가 문단을 하나씩 열어 대본 칸이 넘치는지 잰다
+    Object.assign(window.deckDebug, { edits: () => edits, setEdit, marks: id => MARKS[partOf(id)][id], goPara: id => goPara(partOf(id), id),
+      overflow: () => { const s = $('.pv-script'); return s.scrollHeight - s.clientHeight; } });
+    P.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.dataset.i = i; b.textContent = `${p.id} ${p.title}`;
+      b.addEventListener('click', () => goPara(i, p.paras[0].id));
+      $('#pvParts').appendChild(b);
+    });
+    $('#pvStart').addEventListener('click', () => begin(cur));
+    $('#pvPrev').addEventListener('click', () => { prev(); commit(); });
+    $('#pvNextBtn').addEventListener('click', () => { if (!start.hidden) begin(cur); else { next(); commit(); } });
+    $('#pvPlay').addEventListener('click', () => { playing ? pause() : play(); commit(); });
+    $('#pvModeBtn').addEventListener('click', () => { setMode(mode === 'live' ? 'rehearse' : 'live'); commit(); });
+    $('#pvTimer').addEventListener('click', () => { startedAt = Date.now(); commit(); });
+    $('#pvOpen').addEventListener('click', () => {
+      const url = location.href.split('#')[0];
+      let w = null;
+      try { w = window.open(url, 'jsp-show-' + KEY, 'popup,width=1280,height=760'); } catch (e) {}
+      if (w) { peerWin = w; $('#pvNote').textContent = '새 창을 프로젝터 화면으로 옮기고 그 창에서 F 를 누르면 전체 화면입니다.'; }
+      else $('#pvNote').textContent = '새 창이 막혔습니다. 같은 주소를 # 없이 새 탭으로 여세요. 열리면 자동으로 이어집니다.';
+    });
+    let pvKey = '', pvPart = -1;
+    pvUpdate = t => {
+      const ps = P[cur].paras; let k = 0;
+      ps.forEach((p, i) => { if (t >= TIMES[cur][p.id].cue - 0.01) k = i; });
+      const para = ps[k];
+      setText('#pvPart', `${P[cur].id} ${P[cur].title}`);
+      setText('#pvPara', para.id);
+      if (mode === 'live') {
+        const c0 = TIMES[cur][para.id].cue, c1 = k + 1 < ps.length ? TIMES[cur][ps[k + 1].id].cue : Infinity;
+        const hs = HOLDS[cur].filter(h => h >= c0 - 0.01 && h < c1 - 0.01);
+        setText('#pvClick', `클릭 ${hs.filter(h => h <= t + 0.001).length}/${hs.length}`);
+      } else setText('#pvClick', '');
+      if (pvKey !== cur + '/' + para.id) {
+        pvKey = cur + '/' + para.id;
+        renderScript(cur, para);
+        const tx = p => (edits[p.id] ? edits[p.id].text : p.text);
+        $('#pvNext').textContent = k + 1 < ps.length ? `${ps[k + 1].id} · ${tx(ps[k + 1])}`
+          : cur + 1 < P.length ? `${P[cur + 1].id} ${P[cur + 1].title} · ${tx(P[cur + 1].paras[0])}` : '마지막 문단입니다';
+        $('.pv-script').scrollTop = 0;
+      }
+      paint(t);
+      if (pvPart !== cur) {   // 이 파트의 문단 바로 가기
+        pvPart = cur;
+        const box = $('#pvParas'), pi = cur;
+        box.innerHTML = '';
+        ps.forEach(p => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.dataset.id = p.id; b.title = p.text;
+          b.innerHTML = `<b>${p.id}</b>${esc(p.text.slice(0, 16))}…`;
+          b.addEventListener('click', () => goPara(pi, p.id));
+          box.appendChild(b);
+        });
+        edUI();
+      }
+      $$('#pvParas button').forEach(b => b.classList.toggle('on', b.dataset.id === para.id));
+      $$('#pvParts button').forEach(b => b.classList.toggle('on', +b.dataset.i === cur));
+      setText('#pvMode', mode === 'live' ? '장표만 보기 · 클릭' : `프레젠테이션 · ${VOICE} 음성`);
+      setText('#pvModeBtn', mode === 'live' ? '프레젠테이션으로' : '장표만 보기로');
+      setText('#pvPlay', playing ? '멈춤' : '재생');
+      $('#pvPlay').hidden = mode === 'live';
+      $('#pvModeBtn').hidden = !HAS_AUDIO;
+      $('#pvStart').hidden = start.hidden;
+      const ok = performance.now() - peers.show < 4500;
+      setText('#pvLink', ok ? '● 발표 화면 연결됨' : '○ 발표 화면 연결 안 됨');
+      $('#pvLink').classList.toggle('ok', ok);
+    };
+    const clock = () => {
+      const d = new Date(), s = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
+      setText('#pvClock', `${two(d.getHours())}:${two(d.getMinutes())}`);
+      setText('#pvElapsed', `${Math.floor(s / 60)}:${two(s % 60)}`);
+      pvUpdate(now());
+    };
+    clock(); setInterval(clock, 500);
+  }
+
+  // ── 서체 확인: 발표 기기에서 시작 화면의 이 문구부터 본다(서체 이름은 기기마다 다를 수 있다) ──
+  async function fonts() {
+    const faces = Array.from(document.fonts).filter(f => /^"?(Ed|Pre)"?$/.test(f.family));
+    await Promise.allSettled(faces.map(f => f.load()));
+    const ok = fam => { const fs = faces.filter(f => f.family.replace(/"/g, '') === fam); return fs.length > 0 && fs.every(f => f.status === 'loaded'); };
+    return { ed: ok('Ed'), pre: ok('Pre') };
+  }
+
+  // ── 시작 ──
+  const hp = /^#p(\w+)$/.exec(location.hash || ''), hpi = hp ? P.findIndex(p => p.id === hp[1]) : -1;   // #p03 = 03 파트부터
+  modeUI();
+  goPart(Math.max(0, hpi), 0, false);
+  setSubs(subsOn); setAuto(autoNext);
+  requestAnimationFrame(loop);
+  send('hello', {});
+  if (MISSING.length) { const n = $('#sceneNote'); n.hidden = false; n.textContent = `장면 파일 없음: ${MISSING.join(' · ')}. scenes/ 에 파일을 만들고 index.html 에 script 줄을 더하세요.`; }
+  const FONT_LABEL = M.fonts || '장표 서체';
+  fonts().then(r => {
+    const note = $('#fontNote');
+    if (r.ed && r.pre) note.textContent = `${FONT_LABEL} 확인됨 · 단축키 H`;
+    else { note.classList.add('warn'); note.textContent = `이 브라우저에서 ${FONT_LABEL}(${[!r.ed && '주 서체', !r.pre && '보조 서체'].filter(Boolean).join(' · ')})를 찾지 못했습니다. 서체가 설치된 맥의 Chrome 으로 여세요.`; }
+  });
+})();
+</script>
