@@ -105,6 +105,7 @@ data.js 에 파트를 더하고, `scenes/NN.js` 를 만들고, `index.html` 의 
 | 명령 | 하는 일 |
 | --- | --- |
 | `python3 <스킬>/scripts/new_deck.py <폴더> --title "제목"` | 새 발표 폴더 |
+| `python3 <스킬>/scripts/new_deck.py <폴더> --gallery` | 장면 패턴 견본 장표(`gallery/` 의 대본 · 장면으로). 패턴 설명은 `references/patterns.md` |
 | `python3 tools/tts.py` → `--go` · `--only 02-04 --go` | 음성 계획(새로 만들 문단 · 크레딧 · 남은 크레딧) → 생성 · 파트 음성 · timing.js · data.js 음성 경로 |
 | `pbpaste \| python3 tools/apply_edits.py --dry-run` | 발표자 화면에서 고친 대본 · ▶ 를 원본에 |
 | `node tools/shoot.mjs --part NN --port 9371 --out <폴더>` | 누를 때마다 화면 + 9장 모음 + 콘솔 경고 · 오류. `--keys` 핵심 화면만, `--scale 1` 원본 크기 |
